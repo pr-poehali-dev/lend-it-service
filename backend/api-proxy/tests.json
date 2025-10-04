@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Test OPTIONS for CORS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedHeaders": {
+        "Access-Control-Allow-Origin": "*"
+      }
+    },
+    {
+      "name": "Test proxy to users endpoint",
+      "method": "GET",
+      "path": "/?path=/users",
+      "expectedStatus": [200, 503],
+      "bodyMatcher": "partial"
+    }
+  ]
+}
