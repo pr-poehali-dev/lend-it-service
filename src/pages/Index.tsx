@@ -8,6 +8,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { mockApiService as apiService } from "@/services/mockApi";
 import { Item as ApiItem, User } from "@/types/api";
+import { AddItemDialog } from "@/components/AddItemDialog";
+import { EditItemDialog } from "@/components/EditItemDialog";
 
 type ItemWithOwner = ApiItem & {
   ownerName?: string;
@@ -22,6 +24,9 @@ const Index = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ApiItem | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -97,6 +102,68 @@ const Index = () => {
   const userItems = currentUser
     ? items.filter(item => item.idUser === currentUser.id)
     : [];
+
+  const handleAddItem = async (data: { name: string; description: string; available: boolean }) => {
+    if (!currentUser) return;
+    
+    try {
+      await apiService.createItem(currentUser.id, data);
+      await loadData();
+      toast({
+        title: "Успешно!",
+        description: "Вещь добавлена",
+      });
+    } catch (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось добавить вещь",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditItem = async (data: { name: string; description: string; available: boolean }) => {
+    if (!currentUser || !editingItem) return;
+    
+    try {
+      await apiService.updateItem(currentUser.id, editingItem.id, data);
+      await loadData();
+      toast({
+        title: "Успешно!",
+        description: "Вещь обновлена",
+      });
+    } catch (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось обновить вещь",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!editingItem) return;
+    
+    try {
+      await apiService.deleteItem(editingItem.id);
+      await loadData();
+      toast({
+        title: "Успешно!",
+        description: "Вещь удалена",
+      });
+    } catch (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить вещь",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openEditDialog = (item: ApiItem) => {
+    setEditingItem(item);
+    setEditDialogOpen(true);
+  };
 
   if (loading) {
     return (
@@ -213,7 +280,7 @@ const Index = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-semibold">Мои вещи</h2>
-          <Button>
+          <Button onClick={() => setAddDialogOpen(true)}>
             <Icon name="Plus" size={16} className="mr-2" />
             Добавить вещь
           </Button>
@@ -221,14 +288,14 @@ const Index = () => {
         {userItems.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {userItems.map(item => (
-              <ItemCard key={item.id} item={item} showActions />
+              <ItemCard key={item.id} item={item} showActions onEdit={() => openEditDialog(item)} />
             ))}
           </div>
         ) : (
           <div className="text-center py-12 border-2 border-dashed rounded-lg">
             <Icon name="Package" size={48} className="mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-muted-foreground mb-4">У вас пока нет вещей</p>
-            <Button>
+            <Button onClick={() => setAddDialogOpen(true)}>
               <Icon name="Plus" size={16} className="mr-2" />
               Добавить первую вещь
             </Button>
@@ -339,11 +406,33 @@ const Index = () => {
           <p>© 2025 LendIt. Платформа для обмена вещами</p>
         </div>
       </footer>
+
+      <AddItemDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSubmit={handleAddItem}
+      />
+
+      <EditItemDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        item={editingItem}
+        onSubmit={handleEditItem}
+        onDelete={handleDeleteItem}
+      />
     </div>
   );
 };
 
-const ItemCard = ({ item, showActions = false }: { item: ItemWithOwner; showActions?: boolean }) => (
+const ItemCard = ({ 
+  item, 
+  showActions = false, 
+  onEdit 
+}: { 
+  item: ItemWithOwner; 
+  showActions?: boolean;
+  onEdit?: () => void;
+}) => (
   <Card className="group hover:shadow-md transition-shadow">
     <CardContent className="p-0">
       <div className="aspect-video bg-muted flex items-center justify-center rounded-t-lg">
@@ -363,7 +452,7 @@ const ItemCard = ({ item, showActions = false }: { item: ItemWithOwner; showActi
             <span>{item.ownerName}</span>
           </div>
           {showActions ? (
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={onEdit}>
               <Icon name="MoreVertical" size={16} />
             </Button>
           ) : (
