@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { apiService } from "@/services/api";
+import { mockApiService as apiService } from "@/services/mockApi";
 import { Item as ApiItem, User } from "@/types/api";
 
 type ItemWithOwner = ApiItem & {
