@@ -1,17 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
+import { apiService } from "@/services/api";
+import { Item as ApiItem, User } from "@/types/api";
 
-type Item = {
-  id: number;
-  name: string;
-  description: string;
-  available: boolean;
-  owner: string;
+type ItemWithOwner = ApiItem & {
+  ownerName?: string;
 };
 
 type Page = "home" | "catalog" | "profile" | "search";
@@ -19,20 +18,96 @@ type Page = "home" | "catalog" | "profile" | "search";
 const Index = () => {
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [searchQuery, setSearchQuery] = useState("");
+  const [items, setItems] = useState<ItemWithOwner[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const mockItems: Item[] = [
-    { id: 1, name: "Велосипед горный", description: "Отличное состояние, 21 скорость", available: true, owner: "Иван П." },
-    { id: 2, name: "Палатка туристическая", description: "4-местная, водонепроницаемая", available: true, owner: "Мария С." },
-    { id: 3, name: "Фотоаппарат Canon", description: "Зеркальная камера с объективом", available: false, owner: "Алексей К." },
-    { id: 4, name: "Сноуборд", description: "Размер 156см, с креплениями", available: true, owner: "Дмитрий В." },
-    { id: 5, name: "Швейная машинка", description: "Электрическая, многофункциональная", available: true, owner: "Ольга М." },
-    { id: 6, name: "Дрель ударная", description: "Мощная, с набором сверл", available: true, owner: "Сергей Л." },
-  ];
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const filteredItems = mockItems.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [fetchedItems, fetchedUsers] = await Promise.all([
+        apiService.getItems(),
+        apiService.getUsers(),
+      ]);
+
+      const itemsWithOwners = fetchedItems.map(item => ({
+        ...item,
+        ownerName: fetchedUsers.find(u => u.id === item.idUser)?.name || 'Неизвестен',
+      }));
+
+      setItems(itemsWithOwners);
+      setUsers(fetchedUsers);
+
+      if (fetchedUsers.length > 0) {
+        setCurrentUser(fetchedUsers[0]);
+      }
+    } catch (error) {
+      toast({
+        title: "Ошибка загрузки",
+        description: "Не удалось подключиться к серверу. Проверьте, что Spring Boot запущен на localhost:8080",
+        variant: "destructive",
+      });
+      console.error("API Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    try {
+      const results = await apiService.searchItems(searchQuery);
+      const resultsWithOwners = results.map(item => ({
+        ...item,
+        ownerName: users.find(u => u.id === item.idUser)?.name || 'Неизвестен',
+      }));
+      setItems(resultsWithOwners);
+    } catch (error) {
+      toast({
+        title: "Ошибка поиска",
+        description: "Не удалось выполнить поиск",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (searchQuery) {
+      const timer = setTimeout(handleSearch, 500);
+      return () => clearTimeout(timer);
+    } else {
+      loadData();
+    }
+  }, [searchQuery]);
+
+  const filteredItems = searchQuery
+    ? items.filter(item =>
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : items;
+
+  const userItems = currentUser
+    ? items.filter(item => item.idUser === currentUser.id)
+    : [];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-muted-foreground">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
 
   const renderHome = () => (
     <div className="space-y-12">
@@ -59,11 +134,15 @@ const Index = () => {
             <Icon name="ChevronRight" size={16} className="ml-1" />
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mockItems.slice(0, 3).map(item => (
-            <ItemCard key={item.id} item={item} />
-          ))}
-        </div>
+        {items.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.slice(0, 3).map(item => (
+              <ItemCard key={item.id} item={item} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-muted-foreground py-8">Пока нет доступных вещей</p>
+        )}
       </section>
 
       <section className="grid md:grid-cols-3 gap-6 py-12">
@@ -98,11 +177,18 @@ const Index = () => {
         <h1 className="text-3xl font-bold mb-2">Каталог вещей</h1>
         <p className="text-muted-foreground">Все доступные вещи для обмена</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {mockItems.map(item => (
-          <ItemCard key={item.id} item={item} />
-        ))}
-      </div>
+      {items.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {items.map(item => (
+            <ItemCard key={item.id} item={item} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <Icon name="Package" size={64} className="mx-auto text-muted-foreground/50 mb-4" />
+          <p className="text-muted-foreground">Пока нет доступных вещей</p>
+        </div>
+      )}
     </div>
   );
 
@@ -110,11 +196,13 @@ const Index = () => {
     <div className="space-y-8">
       <div className="flex items-start gap-6">
         <Avatar className="w-20 h-20">
-          <AvatarFallback className="text-2xl">ИП</AvatarFallback>
+          <AvatarFallback className="text-2xl">
+            {currentUser?.name.slice(0, 2).toUpperCase() || "??"}
+          </AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <h1 className="text-3xl font-bold mb-1">Иван Петров</h1>
-          <p className="text-muted-foreground mb-4">ivan.petrov@example.com</p>
+          <h1 className="text-3xl font-bold mb-1">{currentUser?.name || "Гость"}</h1>
+          <p className="text-muted-foreground mb-4">{currentUser?.email || "не указан"}</p>
           <Button variant="outline" size="sm">
             <Icon name="Settings" size={16} className="mr-2" />
             Настройки
@@ -130,11 +218,22 @@ const Index = () => {
             Добавить вещь
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mockItems.filter(item => item.owner === "Иван П.").map(item => (
-            <ItemCard key={item.id} item={item} showActions />
-          ))}
-        </div>
+        {userItems.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {userItems.map(item => (
+              <ItemCard key={item.id} item={item} showActions />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <Icon name="Package" size={48} className="mx-auto text-muted-foreground/50 mb-3" />
+            <p className="text-muted-foreground mb-4">У вас пока нет вещей</p>
+            <Button>
+              <Icon name="Plus" size={16} className="mr-2" />
+              Добавить первую вещь
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -160,11 +259,18 @@ const Index = () => {
           <p className="text-sm text-muted-foreground">
             Найдено: {filteredItems.length} {filteredItems.length === 1 ? 'вещь' : 'вещей'}
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredItems.map(item => (
-              <ItemCard key={item.id} item={item} />
-            ))}
-          </div>
+          {filteredItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredItems.map(item => (
+                <ItemCard key={item.id} item={item} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Icon name="SearchX" size={64} className="mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-muted-foreground">Ничего не найдено</p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -237,7 +343,7 @@ const Index = () => {
   );
 };
 
-const ItemCard = ({ item, showActions = false }: { item: Item; showActions?: boolean }) => (
+const ItemCard = ({ item, showActions = false }: { item: ItemWithOwner; showActions?: boolean }) => (
   <Card className="group hover:shadow-md transition-shadow">
     <CardContent className="p-0">
       <div className="aspect-video bg-muted flex items-center justify-center rounded-t-lg">
@@ -254,7 +360,7 @@ const ItemCard = ({ item, showActions = false }: { item: Item; showActions?: boo
         <div className="flex items-center justify-between pt-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Icon name="User" size={14} />
-            <span>{item.owner}</span>
+            <span>{item.ownerName}</span>
           </div>
           {showActions ? (
             <Button variant="ghost" size="sm">
